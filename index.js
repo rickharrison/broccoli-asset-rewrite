@@ -86,8 +86,6 @@ AssetRewrite.prototype.rewriteAssetPath = function (string, assetPath, replaceme
   // Early exit: does the file contain the asset path?
   if (string.indexOf(assetPath) === -1) return string;
 
-  var newString = string;
-
   /*
    * Replace all of the assets with their new fingerprint name
    *
@@ -97,7 +95,7 @@ AssetRewrite.prototype.rewriteAssetPath = function (string, assetPath, replaceme
    * \\s* - Any amount of white space
    * ( - Starts the first capture group
    * [^"\'()=]* - Do not match any of ^"'()= 0 or more times
-   * [^"\'()\\>=]* - Do not match any of ^"'()\>= 0 or more times - Explicitly add \ here because of handlebars compilation
+   * [^"\'()\\\\>=]* - Do not match any of ^"'()\>= 0 or more times - Explicitly add \ here because of handlebars compilation
    * ) - End first capture group
    * (\\?[^"\')> ]*)? - Allow for query parameters to be present after the URL of an asset
    * \\s* - Any amount of white space
@@ -106,35 +104,36 @@ AssetRewrite.prototype.rewriteAssetPath = function (string, assetPath, replaceme
    * ["\')> ] - Match one of "'( > exactly one time
    */
 
-  var re = new RegExp('["\'(=]\\s*([^"\'()=]*' + escapeRegExp(assetPath) + '[^"\'()\\>=]*)(\\?[^"\')> ]*)?\\s*\\\\*\\s*["\')> ]', 'g');
-  var match = null;
+  var re = new RegExp('["\'(=]\\s*([^"\'()=]*' + escapeRegExp(assetPath) + '[^"\'()\\\\>=]*)(\\?[^"\')> ]*)?\\s*\\\\*\\s*["\')> ]', 'g');
   /*
    * This is to ignore matches that should not be changed
    * Any URL encoded match that would be ignored above will be ignored by this: "'()=\
    */
   var ignoreLibraryCode = new RegExp('%(22|27|5C|28|29|3D)[^"\'()=]*' + escapeRegExp(assetPath));
 
-  while (match = re.exec(newString)) {
-    var replaceString = '';
-    if (ignoreLibraryCode.exec(match[1])) {
-      continue;
+  var prepend = this.prepend;
+
+  // Replace each matched instance of the asset path
+  var newString = string.replace(re, function (wholeMatch, matchedPath) {
+    // Early exit to ignore library code
+    if (ignoreLibraryCode.test(matchedPath)) {
+      return wholeMatch;
     }
 
-    replaceString = match[1].replace(assetPath, replacementPath);
+    var replaceString = matchedPath.replace(assetPath, replacementPath);
 
-    if (this.prepend && replaceString.indexOf(this.prepend) !== 0) {
+    if (prepend && replaceString.indexOf(prepend) !== 0) {
       var removeLeadingRelativeOrSlashRegex = new RegExp('^(\\.*/)*(.*)$');
-      replaceString = this.prepend + removeLeadingRelativeOrSlashRegex.exec(replaceString)[2];
+      replaceString = prepend + removeLeadingRelativeOrSlashRegex.exec(replaceString)[2];
     }
 
-    newString = newString.replace(new RegExp(escapeRegExp(match[1]), 'g'), replaceString);
-  }
+    return wholeMatch.replace(matchedPath, replaceString);
+  });
 
-  var self = this;
   return newString.replace(new RegExp('sourceMappingURL=' + escapeRegExp(assetPath)), function(wholeMatch) {
     var replaceString = replacementPath;
-    if (self.prepend && (!/^sourceMappingURL=(http|https|\/\/)/.test(wholeMatch))) {
-      replaceString = self.prepend + replacementPath;
+    if (prepend && (!/^sourceMappingURL=(http|https|\/\/)/.test(wholeMatch))) {
+      replaceString = prepend + replacementPath;
     }
     return wholeMatch.replace(assetPath, replaceString);
   });
